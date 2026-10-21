@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
 st.title("💳 Credit Card Fraud Detection")
@@ -11,8 +12,6 @@ def load_data():
     return pd.read_csv(url)
 
 df = load_data()
-
-# PROPER BALANCED TRAINING - idhe key point
 fraud = df[df['Class']==1]
 legit = df[df['Class']==0].sample(n=10000, random_state=42)
 df_train = pd.concat([fraud, legit]).sample(frac=1, random_state=42)
@@ -21,28 +20,42 @@ X = df_train.drop(columns=['Class'])
 y = df_train['Class']
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
-# NO CACHE for model - appudu prathi sari kotha model train avuthundi
-model = XGBClassifier(n_estimators=100, max_depth=6, scale_pos_weight=20, eval_metric='logloss', random_state=42)
-model.fit(X_train, y_train)
+# Rendu models train - No cache
+rf = RandomForestClassifier(n_estimators=50, class_weight='balanced', random_state=42)
+xgb = XGBClassifier(n_estimators=100, max_depth=6, scale_pos_weight=20, eval_metric='logloss', random_state=42)
+rf.fit(X_train, y_train)
+xgb.fit(X_train, y_train)
 
-st.success(f"Data: {len(df)} | Fraud: {len(fraud)} | Model Trained!")
+st.success(f"Data: {len(df)} | Fraud: {len(fraud)} | Both Models Ready!")
 
-# Auto fraud rows list
-fraud_rows = df[df['Class']==1].index.tolist()
-st.write(f"Fraud examples try: {fraud_rows[:10]}")
+# Test kosam buttons - List kanipinchadu, buttons matrame
+colA, colB = st.columns(2)
+with colA:
+    if st.button("🎲 Test FRAUD"):
+        st.session_state['row'] = int(df[df['Class']==1].sample(1).index[0])
+with colB:
+    if st.button("🎲 Test LEGIT"):
+        st.session_state['row'] = int(df[df['Class']==0].sample(1).index[0])
 
-row = st.number_input("Row Number", 0, len(df)-1, 2)
+row = st.number_input("Row Number", 0, len(df)-1, value=st.session_state.get('row', 541))
 
-if st.button("Analyze"):
+if st.button("Analyze Both Models"):
     r = df.iloc[row:row+1]
     actual = int(r['Class'].values[0])
     feat = r.drop(columns=['Class'])
-    prob = model.predict_proba(feat)[0][1]*100
-    pred = int(model.predict(feat)[0])
     
-    st.write(f"Actual: {'🔴 FRAUD' if actual==1 else '🟢 LEGIT'} | Predicted: {'🔴 FRAUD' if pred==1 else '🟢 LEGIT'}")
+    st.write(f"**Actual Data: {'🔴 FRAUD' if actual==1 else '🟢 LEGITIMATE'}**")
     
-    if actual==1:
-        st.error(f"🔴 FRAUD CONFIRMED - {prob:.2f}% (Ikkada 80%+ vastundi)")
-    else:
-        st.success(f"🟢 LEGIT - Fraud Prob {prob:.2f}% (Ikkada 0-5% vastundi)")
+    c1, c2 = st.columns(2)
+    with c1:
+        prob_rf = rf.predict_proba(feat)[0][1]*100
+        pred_rf = rf.predict(feat)[0]
+        st.info(f"**Random Forest (Traditional)**\n\nPredicted: {'FRAUD' if pred_rf==1 else 'LEGIT'}\n\nProb: {prob_rf:.2f}%")
+    with c2:
+        prob_xgb = xgb.predict_proba(feat)[0][1]*100
+        pred_xgb = xgb.predict(feat)[0]
+        st.error(f"**XGBoost (Trending)**\n\nPredicted: {'FRAUD' if pred_xgb==1 else 'LEGIT'}\n\nProb: {prob_xgb:.2f}%")
+    
+    st.write("---")
+    if prob_xgb > prob_rf and actual==1:
+        st.success("✅ XGBoost is more confident for FRAUD! - Trending is Better")
