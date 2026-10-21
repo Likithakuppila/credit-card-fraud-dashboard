@@ -184,7 +184,7 @@ if st.button("Predict Transaction"):
         # Predict transaction class.
         prediction = int(model.predict(transaction)[0])
         st.write("Debug — Predicted class:", prediction)
-st.write("Debug — Probability class order:", list(model.classes_))
+        st.write("Debug — Probability class order:", list(model.classes_))
 
         if prediction == 1:
             st.error("🚨 Model Prediction: FRAUD")
