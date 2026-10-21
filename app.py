@@ -5,7 +5,7 @@ import joblib
 import os
 
 st.set_page_config(
-    page_title="AI Fraud Detection Dashboard",
+    page_title="AI-Based Fraud Detection",
     page_icon="💳",
     layout="wide"
 )
@@ -15,7 +15,9 @@ st.subheader("Transaction Analysis and Machine Learning Predictions")
 
 st.divider()
 
-# ---------------- DATASET UPLOAD ----------------
+# ==================================================
+# 1. UPLOAD DATASET
+# ==================================================
 
 st.header("📂 Upload Transaction Dataset")
 
@@ -25,13 +27,13 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is None:
-    st.info("Please upload your creditcard.csv file.")
+    st.info("Please upload your creditcard.csv dataset.")
     st.stop()
 
 try:
     df = pd.read_csv(uploaded_file)
 except Exception as error:
-    st.error(f"Unable to read CSV file: {error}")
+    st.error(f"CSV loading error: {error}")
     st.stop()
 
 if df.empty:
@@ -39,22 +41,23 @@ if df.empty:
     st.stop()
 
 if "Class" not in df.columns:
-    st.error("The dataset must contain a 'Class' column.")
+    st.error("The dataset must contain a Class column.")
     st.stop()
 
-# Convert Class column into numeric values
+# Convert target values to numeric
 df["Class"] = pd.to_numeric(df["Class"], errors="coerce")
 
-# Count valid classes
 valid_df = df[df["Class"].isin([0, 1])].copy()
 
 if valid_df.empty:
-    st.error("No valid Class values (0 or 1) found in the dataset.")
-
-    with st.expander("Dataset diagnostic information"):
-        st.write(df["Class"].value_counts(dropna=False).to_dict())
-
+    st.error("No valid Class values (0 or 1) were found.")
     st.stop()
+
+# ==================================================
+# 2. DATASET SUMMARY
+# ==================================================
+
+st.header("📊 Transaction Overview")
 
 total_transactions = len(df)
 legitimate_count = int((valid_df["Class"] == 0).sum())
@@ -64,34 +67,30 @@ classified_count = legitimate_count + fraud_count
 
 fraud_percentage = (
     fraud_count / classified_count * 100
-    if classified_count > 0
-    else 0
+    if classified_count > 0 else 0
 )
-
-# ---------------- SUMMARY CARDS ----------------
-
-st.header("📊 Transaction Overview")
 
 col1, col2, col3, col4 = st.columns(4)
 
 col1.metric("Total Transactions", f"{total_transactions:,}")
 col2.metric("Legitimate Transactions", f"{legitimate_count:,}")
 col3.metric("Fraud Transactions", f"{fraud_count:,}")
-col4.metric("Fraud Percentage", f"{fraud_percentage:.2f}%")
+col4.metric("Fraud Percentage", f"{fraud_percentage:.4f}%")
 
-with st.expander("Dataset diagnostic information"):
+with st.expander("Dataset Diagnostic Information"):
     st.write("Dataset shape:", df.shape)
-    st.write("Class data type:", str(df["Class"].dtype))
     st.write(
         "Class values:",
         df["Class"].value_counts(dropna=False).to_dict()
     )
-    st.write("Columns:", df.columns.tolist())
+    st.write("Dataset columns:", df.columns.tolist())
 
-with st.expander("Preview dataset"):
+with st.expander("View Dataset"):
     st.dataframe(df.head(10), use_container_width=True)
 
-# ---------------- FRAUD VS LEGITIMATE CHART ----------------
+# ==================================================
+# 3. TRANSACTION CHARTS
+# ==================================================
 
 st.divider()
 st.header("📈 Transaction Analysis")
@@ -101,7 +100,7 @@ chart_df = pd.DataFrame({
     "Count": [legitimate_count, fraud_count]
 })
 
-fig_class = px.bar(
+fig = px.bar(
     chart_df,
     x="Transaction Type",
     y="Count",
@@ -110,9 +109,7 @@ fig_class = px.bar(
     title="Fraud vs Legitimate Transactions"
 )
 
-st.plotly_chart(fig_class, use_container_width=True)
-
-# ---------------- AMOUNT DISTRIBUTION ----------------
+st.plotly_chart(fig, use_container_width=True)
 
 if "Amount" in df.columns:
 
@@ -125,15 +122,17 @@ if "Amount" in df.columns:
 
     st.plotly_chart(fig_amount, use_container_width=True)
 
-    amount_df = valid_df.copy()
+    amount_chart_df = valid_df.copy()
 
-    amount_df["Transaction Type"] = amount_df["Class"].map({
-        0: "Legitimate",
-        1: "Fraud"
-    })
+    amount_chart_df["Transaction Type"] = (
+        amount_chart_df["Class"].map({
+            0: "Legitimate",
+            1: "Fraud"
+        })
+    )
 
     fig_box = px.box(
-        amount_df,
+        amount_chart_df,
         x="Transaction Type",
         y="Amount",
         color="Transaction Type",
@@ -142,7 +141,9 @@ if "Amount" in df.columns:
 
     st.plotly_chart(fig_box, use_container_width=True)
 
-# ---------------- MACHINE LEARNING MODELS ----------------
+# ==================================================
+# 4. LOAD MACHINE LEARNING MODELS
+# ==================================================
 
 st.divider()
 st.header("🤖 AI Fraud Prediction")
@@ -159,159 +160,183 @@ available_models = {
 }
 
 if not available_models:
-
     st.error(
-        "Model files not found. Upload random_forest_model.pkl "
-        "and xgboost_model.pkl to your GitHub repository."
+        "Model files not found. Please upload "
+        "random_forest_model.pkl and xgboost_model.pkl "
+        "to your GitHub repository."
     )
+    st.stop()
 
-else:
+selected_model_name = st.selectbox(
+    "Select Machine Learning Model",
+    list(available_models.keys())
+)
 
-    selected_model_name = st.selectbox(
-        "Select Machine Learning Model",
-        list(available_models.keys())
-    )
+row_number = st.number_input(
+    "Transaction Row Number (starts from 0)",
+    min_value=0,
+    max_value=len(df) - 1,
+    value=0,
+    step=1
+)
 
-    row_number = st.number_input(
-        "Select transaction row number (starts at 0)",
-        min_value=0,
-        max_value=len(df) - 1,
-        value=0,
-        step=1
-    )
+# ==================================================
+# 5. PREDICTION
+# ==================================================
 
-    if st.button("🔍 Analyze Transaction", type="primary"):
+if st.button("🔍 Analyze Transaction", type="primary"):
 
-        try:
-            model_path = available_models[selected_model_name]
-            model = joblib.load(model_path)
+    try:
+        model_path = available_models[selected_model_name]
+        model = joblib.load(model_path)
 
-            # Separate input features and target column
-            X = df.drop(columns=["Class"]).copy()
+        # Prepare features
+        X = df.drop(columns=["Class"]).copy()
 
-            transaction = X.iloc[[int(row_number)]].copy()
+        transaction = X.iloc[[int(row_number)]].copy()
 
-            # Match the feature order used to train the model
-            if hasattr(model, "feature_names_in_"):
+        # Match feature order from model training
+        if hasattr(model, "feature_names_in_"):
 
-                expected_features = list(model.feature_names_in_)
+            expected_features = list(model.feature_names_in_)
 
-                missing_features = [
-                    feature
-                    for feature in expected_features
-                    if feature not in transaction.columns
-                ]
-
-                if missing_features:
-                    st.error(
-                        "Required features are missing: "
-                        + ", ".join(missing_features)
-                    )
-                    st.stop()
-
-                transaction = transaction[expected_features]
-
-            transaction = transaction.apply(
-                pd.to_numeric,
-                errors="coerce"
-            )
-
-            if transaction.isnull().any().any():
-                st.error(
-                    "Selected transaction contains missing or "
-                    "non-numeric feature values."
-                )
-                st.stop()
-
-            # Prediction and probability
-            prediction = int(model.predict(transaction)[0])
-
-            probabilities = model.predict_proba(transaction)[0]
-
-            model_classes = list(model.classes_)
-
-            fraud_indices = [
-                i for i, label in enumerate(model_classes)
-                if int(label) == 1
+            missing_features = [
+                feature
+                for feature in expected_features
+                if feature not in transaction.columns
             ]
 
-            if not fraud_indices:
-                st.error("The selected model has no fraud class (1).")
+            if missing_features:
+                st.error(
+                    "Missing model features: "
+                    + ", ".join(missing_features)
+                )
                 st.stop()
 
-            fraud_index = fraud_indices[0]
+            transaction = transaction[expected_features]
 
-            fraud_probability = float(probabilities[fraud_index])
+        # Ensure numeric input
+        transaction = transaction.apply(
+            pd.to_numeric,
+            errors="coerce"
+        )
 
-            # ---------------- DISPLAY RESULTS ----------------
+        if transaction.isnull().any().any():
+            st.error(
+                "Selected transaction contains missing or "
+                "non-numeric values."
+            )
+            st.stop()
 
-            st.subheader("Prediction Result")
+        # Get prediction and probabilities
+        prediction = int(model.predict(transaction)[0])
 
-            result_col1, result_col2 = st.columns(2)
+        probabilities = model.predict_proba(transaction)[0]
 
-            with result_col1:
-                if prediction == 1:
-                    st.error("🚨 FRAUD DETECTED")
-                else:
-                    st.success("✅ LEGITIMATE TRANSACTION")
+        model_classes = list(model.classes_)
 
-            with result_col2:
-                st.metric(
-                    "Estimated Fraud Probability",
-                    f"{fraud_probability * 100:.6f}%"
-                )
+        # Locate the fraud class
+        fraud_indices = [
+            index
+            for index, label in enumerate(model_classes)
+            if int(label) == 1
+        ]
 
-            st.write("Fraud Probability Indicator")
-            st.progress(min(max(fraud_probability, 0.0), 1.0))
+        if not fraud_indices:
+            st.error("Fraud class 1 is missing from this model.")
+            st.stop()
 
-            st.subheader("Selected Transaction Details")
-            st.write("Transaction row:", int(row_number))
-            st.write("Selected model:", selected_model_name)
+        fraud_index = fraud_indices[0]
 
+        # Extract fraud probability
+        fraud_probability = float(
+            probabilities[fraud_index]
+        )
+
+        # ==================================================
+        # 6. DISPLAY RESULT
+        # ==================================================
+
+        st.subheader("🔍 Prediction Result")
+
+        result_col1, result_col2 = st.columns(2)
+
+        with result_col1:
+
+            if prediction == 1:
+                st.error("🚨 FRAUD DETECTED")
+            else:
+                st.success("✅ LEGITIMATE TRANSACTION")
+
+        with result_col2:
+
+            st.metric(
+                "Estimated Fraud Probability",
+                f"{fraud_probability * 100:.8f}%"
+            )
+
+        st.write("Fraud Probability Indicator")
+
+        st.progress(
+            min(max(fraud_probability, 0.0), 1.0)
+        )
+
+        # ==================================================
+        # 7. DEBUG INFORMATION
+        # ==================================================
+
+        st.subheader("🛠️ Model Diagnostic Information")
+
+        st.write("Selected Model:", selected_model_name)
+        st.write("Model File:", model_path)
+        st.write("Transaction Row:", int(row_number))
+        st.write("Prediction:", prediction)
+        st.write("Model Classes:", model_classes)
+        st.write("Raw Probabilities:", probabilities.tolist())
+        st.write("Fraud Class Index:", fraud_index)
+        st.write("Fraud Probability (decimal):", fraud_probability)
+        st.write(
+            "Fraud Probability (percentage):",
+            fraud_probability * 100
+        )
+
+        highest_probability_class = int(
+            model_classes[int(probabilities.argmax())]
+        )
+
+        st.write(
+            "Class with Highest Probability:",
+            highest_probability_class
+        )
+
+        if prediction != highest_probability_class:
+            st.warning(
+                "Prediction and highest-probability class differ. "
+                "Check the model and its probability output."
+            )
+        else:
+            st.success(
+                "Prediction and highest-probability class are consistent."
+            )
+
+        # Show transaction input
+        with st.expander("View Selected Transaction Features"):
             st.dataframe(
                 transaction,
                 use_container_width=True
             )
 
-            # ---------------- DEBUG INFORMATION ----------------
+    except Exception as error:
+        st.error("Prediction failed.")
+        st.exception(error)
 
-            with st.expander("🔧 Prediction Debug Information"):
-
-                st.write("Model file:", model_path)
-                st.write("Model classes:", model_classes)
-                st.write("Prediction:", prediction)
-                st.write("Raw probabilities:", probabilities.tolist())
-                st.write("Fraud probability index:", fraud_index)
-                st.write("Fraud probability:", fraud_probability)
-
-                highest_probability_class = int(
-                    model_classes[int(probabilities.argmax())]
-                )
-
-                st.write(
-                    "Class with highest probability:",
-                    highest_probability_class
-                )
-
-                if prediction == highest_probability_class:
-                    st.success(
-                        "Prediction and probability class are consistent."
-                    )
-                else:
-                    st.warning(
-                        "Prediction and highest-probability class differ. "
-                        "Please share this debug output."
-                    )
-
-        except Exception as error:
-            st.error("Unable to analyze this transaction.")
-            st.exception(error)
-
-# ---------------- FOOTER ----------------
+# ==================================================
+# 8. FOOTER
+# ==================================================
 
 st.divider()
 
 st.caption(
-    "AI-Based Fraud Detection System | Machine Learning Project | "
-    "Predictions are estimates and are not definitive proof of fraud."
+    "AI-Based Fraud Detection System | Machine Learning Project. "
+    "Model predictions are estimates and are not definitive proof of fraud."
 )
