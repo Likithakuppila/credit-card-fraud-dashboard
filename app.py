@@ -1,224 +1,355 @@
-
-import os
-import joblib
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import joblib
+import os
+
+# --------------------------------------------------
+# PAGE CONFIGURATION
+# --------------------------------------------------
 
 st.set_page_config(
-    page_title="AI-Based Fraud Detection",
-    page_icon="💳",
+    page_title="AI Fraud Detection Dashboard",
+    page_icon="🔐",
     layout="wide"
 )
 
-st.title("💳 AI-Based Fraud Detection in Digital Payment Gateways")
-st.write("Transaction Analysis and Machine Learning Predictions")
-
-uploaded_file = st.file_uploader(
-    "Upload your credit card dataset (CSV)",
-    type=["csv"]
+st.title("🔐 AI-Based Fraud Detection Dashboard")
+st.write(
+    "Analyze digital payment transactions and identify "
+    "potential fraudulent transactions using Machine Learning."
 )
 
-if uploaded_file is None:
-    st.info("Upload your creditcard.csv dataset to begin.")
-    st.stop()
-
-try:
-    df = pd.read_csv(uploaded_file)
-except Exception as e:
-    st.error(f"Unable to read CSV file: {e}")
-    st.stop()
-
-if not {"Class", "Amount"}.issubset(df.columns):
-    st.error("Dataset must contain Class and Amount columns.")
-    st.stop()
-
-df["Class"] = pd.to_numeric(df["Class"], errors="coerce")
-df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce")
-df = df.dropna(subset=["Class", "Amount"]).reset_index(drop=True)
-
-if df.empty:
-    st.error("The uploaded dataset contains no valid transactions.")
-    st.stop()
-
-# Dashboard filters
-st.sidebar.header("Dashboard Filters")
-
-transaction_type = st.sidebar.selectbox(
-    "Transaction Type",
-    ["All", "Legitimate (0)", "Fraud (1)"]
-)
-
-max_amount = max(float(df["Amount"].max()), 1.0)
-
-amount_range = st.sidebar.slider(
-    "Amount Range",
-    min_value=0.0,
-    max_value=max_amount,
-    value=(0.0, max_amount)
-)
-
-filtered = df[
-    df["Amount"].between(amount_range[0], amount_range[1])
-]
-
-if transaction_type == "Legitimate (0)":
-    filtered = filtered[filtered["Class"] == 0]
-elif transaction_type == "Fraud (1)":
-    filtered = filtered[filtered["Class"] == 1]
-
-total = len(filtered)
-fraud = int((filtered["Class"] == 1).sum())
-legitimate = int((filtered["Class"] == 0).sum())
-
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Total Transactions", f"{total:,}")
-c2.metric("Fraud Transactions", f"{fraud:,}")
-c3.metric("Legitimate Transactions", f"{legitimate:,}")
-c4.metric(
-    "Fraud Percentage",
-    f"{fraud / total * 100:.2f}%" if total else "0.00%"
-)
-
-if total > 0:
-    counts = (
-        filtered["Class"]
-        .map({0: "Legitimate", 1: "Fraud"})
-        .value_counts()
-        .rename_axis("Transaction Type")
-        .reset_index(name="Count")
-    )
-
-    st.subheader("Fraud vs Legitimate Transactions")
-    st.plotly_chart(
-        px.bar(counts, x="Transaction Type", y="Count",
-               color="Transaction Type"),
-        use_container_width=True
-    )
-
-    chart_data = filtered.sample(
-        n=min(10000, total), random_state=42
-    )
-
-    st.subheader("Transaction Amount Distribution")
-    st.plotly_chart(
-        px.histogram(chart_data, x="Amount", color="Class", nbins=40),
-        use_container_width=True
-    )
-
-    st.subheader("Transaction Amount by Class")
-    st.plotly_chart(
-        px.box(chart_data, x="Class", y="Amount"),
-        use_container_width=True
-    )
-
-# AI Fraud Prediction
 st.divider()
-st.header("🤖 AI Fraud Prediction")
 
-model_files = {
+# --------------------------------------------------
+# LOAD AVAILABLE MODELS
+# --------------------------------------------------
+
+available_models = {
     "Random Forest": "random_forest_model.pkl",
     "XGBoost": "xgboost_model.pkl"
 }
 
 available_models = {
-    name: path for name, path in model_files.items()
+    name: path
+    for name, path in available_models.items()
     if os.path.exists(path)
 }
 
 if not available_models:
-    st.error("Model files were not found in the app directory.")
+    st.error(
+        "No trained models found. Please upload "
+        "random_forest_model.pkl and xgboost_model.pkl "
+        "to your GitHub repository."
+    )
     st.stop()
+
+# --------------------------------------------------
+# UPLOAD DATASET
+# --------------------------------------------------
+
+st.header("📂 Upload Transaction Dataset")
+
+uploaded_file = st.file_uploader(
+    "Upload your creditcard.csv file",
+    type=["csv"]
+)
+
+if uploaded_file is None:
+    st.info("Please upload your creditcard.csv dataset to continue.")
+    st.stop()
+
+try:
+    df = pd.read_csv(uploaded_file)
+except Exception as error:
+    st.error(f"Unable to read the CSV file: {error}")
+    st.stop()
+
+if df.empty:
+    st.error("The uploaded CSV file is empty.")
+    st.stop()
+
+if "Class" not in df.columns:
+    st.error(
+        "The uploaded dataset must contain a 'Class' column. "
+        "Expected: 0 = Legitimate, 1 = Fraud."
+    )
+    st.stop()
+
+# --------------------------------------------------
+# DATASET OVERVIEW
+# --------------------------------------------------
+
+st.header("📊 Dataset Overview")
+
+col1, col2, col3 = st.columns(3)
+
+col1.metric("Total Transactions", f"{len(df):,}")
+col2.metric("Legitimate Transactions", f"{(df['Class'] == 0).sum():,}")
+col3.metric("Fraud Transactions", f"{(df['Class'] == 1).sum():,}")
+
+with st.expander("View dataset preview"):
+    st.dataframe(df.head(10), use_container_width=True)
+
+with st.expander("View dataset information"):
+    st.write("Dataset shape:", df.shape)
+    st.write("Columns:", df.columns.tolist())
+    st.write("Missing values:", int(df.isnull().sum().sum()))
+
+# --------------------------------------------------
+# VISUALIZATIONS
+# --------------------------------------------------
+
+st.header("📈 Transaction Analysis")
+
+chart_col1, chart_col2 = st.columns(2)
+
+with chart_col1:
+    class_counts = (
+        df["Class"]
+        .map({0: "Legitimate", 1: "Fraud"})
+        .fillna(df["Class"].astype(str))
+        .value_counts()
+        .reset_index()
+    )
+
+    class_counts.columns = ["Transaction Type", "Count"]
+
+    fig = px.bar(
+        class_counts,
+        x="Transaction Type",
+        y="Count",
+        title="Legitimate vs Fraud Transactions",
+        color="Transaction Type"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+with chart_col2:
+    if "Amount" in df.columns:
+        fig_amount = px.histogram(
+            df,
+            x="Amount",
+            nbins=40,
+            title="Transaction Amount Distribution"
+        )
+
+        st.plotly_chart(fig_amount, use_container_width=True)
+    else:
+        st.info("The dataset does not contain an Amount column.")
+
+# --------------------------------------------------
+# AI FRAUD PREDICTION
+# --------------------------------------------------
+
+st.divider()
+st.header("🤖 AI Fraud Prediction")
+
+st.write(
+    "Select a trained model and a transaction to estimate "
+    "whether the transaction may be fraudulent."
+)
 
 selected_model_name = st.selectbox(
     "Choose Machine Learning Model",
     list(available_models.keys())
 )
 
+max_row = len(df) - 1
+
 row_number = st.number_input(
-    "Transaction row number (starting from 0)",
+    "Select Transaction Row Number",
     min_value=0,
-    max_value=len(df) - 1,
+    max_value=max_row,
     value=0,
     step=1
 )
 
-if st.button("Predict Transaction"):
+# --------------------------------------------------
+# RUN PREDICTION
+# --------------------------------------------------
+
+if st.button("🔍 Analyze Transaction", type="primary"):
+
+    model_path = available_models[selected_model_name]
+
     try:
-        model = joblib.load(available_models[selected_model_name])
+        # Load the selected model
+        model = joblib.load(model_path)
 
-        X_all = df.drop(columns=["Class"])
-        transaction = X_all.iloc[[int(row_number)]]
+        # Remove target column before prediction
+        X = df.drop(columns=["Class"]).copy()
 
-        # Check feature compatibility with the trained model.
-        if hasattr(model, "n_features_in_"):
-            if transaction.shape[1] != model.n_features_in_:
+        # Select exactly one transaction
+        transaction = X.iloc[[int(row_number)]].copy()
+
+        # Use the same feature order used during training
+        if hasattr(model, "feature_names_in_"):
+            expected_features = list(model.feature_names_in_)
+
+            missing_features = [
+                feature
+                for feature in expected_features
+                if feature not in transaction.columns
+            ]
+
+            if missing_features:
                 st.error(
-                    f"Feature mismatch: uploaded data has "
-                    f"{transaction.shape[1]} features, but model expects "
-                    f"{model.n_features_in_}. Use the same feature columns "
-                    f"as the training dataset."
+                    "Dataset is missing required model features: "
+                    + ", ".join(missing_features)
                 )
                 st.stop()
 
+            transaction = transaction[expected_features]
+
+        # Ensure transaction values are numeric
+        transaction = transaction.apply(
+            pd.to_numeric,
+            errors="coerce"
+        )
+
+        if transaction.isnull().any().any():
+            st.error(
+                "The selected transaction contains missing or "
+                "non-numeric feature values. Please check the dataset."
+            )
+            st.stop()
+
+        # Get model class labels
+        model_classes = list(model.classes_)
+
+        # Predict transaction class
         prediction = int(model.predict(transaction)[0])
 
-        if hasattr(model, "predict_proba"):
-            probabilities = model.predict_proba(transaction)[0]
-            classes = list(model.classes_)
+        # Get probabilities for this exact transaction
+        probabilities = model.predict_proba(transaction)[0]
 
-            if 1 not in classes:
-                st.error("Model does not contain fraud class 1.")
-                st.stop()
+        # Find the probability belonging to class 1 (Fraud)
+        fraud_class_index = next(
+            (
+                index
+                for index, class_label in enumerate(model_classes)
+                if int(class_label) == 1
+            ),
+            None
+        )
 
-            fraud_index = classes.index(1)
-            fraud_probability = float(probabilities[fraud_index])
-
-            # Check whether predicted class matches the probability.
-            probability_prediction = int(
-                classes[probabilities.argmax()]
+        if fraud_class_index is None:
+            st.error(
+                "The selected model does not contain class 1 "
+                "for fraud detection. Please check the trained model."
             )
+            st.stop()
 
-            st.write("Predicted class:", prediction)
-            st.write("Class order:", classes)
-            st.write(
-                "Raw probabilities:",
-                [float(p) for p in probabilities]
-            )
+        fraud_probability = float(
+            probabilities[fraud_class_index]
+        )
 
-            if probability_prediction != prediction:
-                st.warning(
-                    "The model prediction and probability output do not "
-                    "match. Check the saved model file and training setup."
-                )
+        # --------------------------------------------------
+        # DISPLAY RESULTS
+        # --------------------------------------------------
 
+        st.subheader("Prediction Results")
+
+        result_col1, result_col2 = st.columns(2)
+
+        with result_col1:
             if prediction == 1:
-                st.error("🚨 Model Prediction: FRAUD")
+                st.error("🚨 Prediction: FRAUD")
             else:
-                st.success("✅ Model Prediction: LEGITIMATE")
+                st.success("✅ Prediction: LEGITIMATE")
 
+        with result_col2:
             st.metric(
                 "Estimated Fraud Probability",
-                f"{fraud_probability * 100:.4f}%"
+                f"{fraud_probability * 100:.6f}%"
             )
-        else:
-            if prediction == 1:
-                st.error("🚨 Model Prediction: FRAUD")
+
+        # Probability progress bar
+        st.write("Fraud Probability Indicator")
+
+        st.progress(
+            min(max(fraud_probability, 0.0), 1.0)
+        )
+
+        # Show transaction details
+        st.subheader("Selected Transaction Details")
+
+        st.write("Transaction Row:", int(row_number))
+        st.write("Selected Model:", selected_model_name)
+
+        st.dataframe(
+            transaction,
+            use_container_width=True
+        )
+
+        # --------------------------------------------------
+        # DEBUG INFORMATION
+        # --------------------------------------------------
+
+        with st.expander("🔧 Prediction Debug Information"):
+
+            st.write("Model file:", model_path)
+            st.write("Model classes:", model_classes)
+            st.write("Model prediction:", prediction)
+            st.write(
+                "Raw probabilities:",
+                probabilities.tolist()
+            )
+            st.write(
+                "Fraud class probability index:",
+                fraud_class_index
+            )
+            st.write(
+                "Fraud probability (0 to 1):",
+                fraud_probability
+            )
+            st.write(
+                "Fraud probability (percentage):",
+                fraud_probability * 100
+            )
+            st.write(
+                "Input transaction shape:",
+                transaction.shape
+            )
+
+            # Compare predicted class with probability-based class
+            probability_prediction = int(
+                model_classes[
+                    int(probabilities.argmax())
+                ]
+            )
+
+            st.write(
+                "Class with highest probability:",
+                probability_prediction
+            )
+
+            if prediction != probability_prediction:
+                st.warning(
+                    "The model's predict() result differs from "
+                    "the class with the highest predict_proba() "
+                    "value. Please share this debug output."
+                )
             else:
-                st.success("✅ Model Prediction: LEGITIMATE")
+                st.success(
+                    "Prediction and probability class are consistent."
+                )
 
-            st.info("This model does not provide probability estimates.")
+    except Exception as error:
+        st.error("Prediction failed.")
+        st.exception(error)
 
-        actual = int(df.iloc[int(row_number)]["Class"])
-        st.write(
-            "Actual dataset label:",
-            "Fraud (1)" if actual == 1 else "Legitimate (0)"
-        )
+# --------------------------------------------------
+# FOOTER
+# --------------------------------------------------
 
-        st.caption(
-            "This is a demonstration using a selected dataset row. "
-            "It is not connected to a live payment gateway."
-        )
+st.divider()
 
-    except Exception as e:
-        st.error(f"Prediction failed: {e}")
+st.caption(
+    "AI-Based Fraud Detection System | "
+    "Machine Learning Project | "
+    "Predictions are estimates and should not be treated "
+    "as definitive proof of fraud."
+)
