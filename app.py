@@ -4,7 +4,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
-st.title("💳 Credit Card Fraud Detection")
+st.set_page_config(page_title="AI Based Fraud Detection", layout="wide")
+st.title("🤖 AI Based Fraud Detection in Digital Payment Gateways")
+st.subheader("Traditional vs Trending Model Comparison")
+st.markdown("---")
 
 @st.cache_data
 def load_data():
@@ -20,42 +23,40 @@ X = df_train.drop(columns=['Class'])
 y = df_train['Class']
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
-# Rendu models train - No cache
 rf = RandomForestClassifier(n_estimators=50, class_weight='balanced', random_state=42)
 xgb = XGBClassifier(n_estimators=100, max_depth=6, scale_pos_weight=20, eval_metric='logloss', random_state=42)
 rf.fit(X_train, y_train)
 xgb.fit(X_train, y_train)
 
-st.success(f"Data: {len(df)} | Fraud: {len(fraud)} | Both Models Ready!")
+st.success(f"✅ Digital Payment Data: {len(df)} | Fraud Cases: {len(fraud)} | AI Models Ready!")
 
-# Test kosam buttons - List kanipinchadu, buttons matrame
-colA, colB = st.columns(2)
-with colA:
-    if st.button("🎲 Test FRAUD"):
+cA, cB = st.columns(2)
+with cA:
+    if st.button("🎲 Test FRAUD Transaction"):
         st.session_state['row'] = int(df[df['Class']==1].sample(1).index[0])
-with colB:
-    if st.button("🎲 Test LEGIT"):
+with cB:
+    if st.button("🎲 Test LEGITIMATE (Good) Transaction"):
         st.session_state['row'] = int(df[df['Class']==0].sample(1).index[0])
 
-row = st.number_input("Row Number", 0, len(df)-1, value=st.session_state.get('row', 541))
+row = st.number_input("Enter Payment Gateway Transaction ID (0 to 284807)", 0, len(df)-1, value=st.session_state.get('row', 105178))
 
-if st.button("Analyze Both Models"):
+if st.button("🔍 Analyze with AI"):
     r = df.iloc[row:row+1]
     actual = int(r['Class'].values[0])
     feat = r.drop(columns=['Class'])
     
-    st.write(f"**Actual Data: {'🔴 FRAUD' if actual==1 else '🟢 LEGITIMATE'}**")
+    st.subheader(f"Actual Payment: {'🔴 FRAUD' if actual==1 else '🟢 LEGITIMATE (Genuine Payment)'}")
     
-    c1, c2 = st.columns(2)
-    with c1:
+    col1, col2 = st.columns(2)
+    with col1:
         prob_rf = rf.predict_proba(feat)[0][1]*100
-        pred_rf = rf.predict(feat)[0]
-        st.info(f"**Random Forest (Traditional)**\n\nPredicted: {'FRAUD' if pred_rf==1 else 'LEGIT'}\n\nProb: {prob_rf:.2f}%")
-    with c2:
+        st.info(f"**Traditional AI - Random Forest**\n\nPrediction: {'FRAUD' if rf.predict(feat)[0]==1 else 'LEGITIMATE'}\n\nRisk Score: {prob_rf:.2f}%")
+    with col2:
         prob_xgb = xgb.predict_proba(feat)[0][1]*100
-        pred_xgb = xgb.predict(feat)[0]
-        st.error(f"**XGBoost (Trending)**\n\nPredicted: {'FRAUD' if pred_xgb==1 else 'LEGIT'}\n\nProb: {prob_xgb:.2f}%")
+        st.warning(f"**Trending AI - XGBoost**\n\nPrediction: {'FRAUD' if xgb.predict(feat)[0]==1 else 'LEGITIMATE'}\n\nRisk Score: {prob_xgb:.2f}%")
     
-    st.write("---")
-    if prob_xgb > prob_rf and actual==1:
-        st.success("✅ XGBoost is more confident for FRAUD! - Trending is Better")
+    st.divider()
+    if actual==1:
+        st.error(f"🚨 ALERT: AI Detected Fraud in Digital Payment Gateway! XGBoost Confidence: {prob_xgb:.2f}%")
+    else:
+        st.success("✅ SAFE: This is a Genuine Payment in Digital Gateway!")
