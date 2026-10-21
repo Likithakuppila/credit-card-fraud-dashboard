@@ -6,33 +6,23 @@ from xgboost import XGBClassifier
 
 st.set_page_config(page_title="Credit Card Fraud Detection", layout="wide")
 st.title("💳 Credit Card Fraud Detection")
+st.write("Traditional vs Trending Models")
 
 @st.cache_data
 def load_data():
-    # 1st try - jsdelivr link (Streamlit lo work ayye link)
-    try:
-        url = 'https://cdn.jsdelivr.net/gh/mlg-ulb/creditcardfraud@master/creditcard.csv'
-        df = pd.read_csv(url)
-        return df
-    except Exception as e:
-        st.warning(f"Online data load fail ayyindi: {e}")
-        # Fallback - local file unte
-        try:
-            df = pd.read_csv('creditcard.csv')
-            return df
-        except:
-            st.error("Data load avvaledu. GitHub repo lo creditcard.csv pettandi.")
-            st.stop()
+    # GOOGLE OFFICIAL LINK - idi pakka work avuthundi, 404 radu
+    url = 'https://storage.googleapis.com/download.tensorflow.org/data/creditcard.csv'
+    df = pd.read_csv(url)
+    return df
 
 df = load_data()
+st.success(f"Data Loaded: {len(df)} rows")
 
-# Speed kosam data ni chinna chesam - App crash avvakunda
-if len(df) > 30000:
+# Speed kosam sample chestunnam - ledante Streamlit slow avuthundi
+if len(df) > 25000:
     fraud = df[df['Class']==1]
     legit = df[df['Class']==0].sample(n=20000, random_state=42)
     df = pd.concat([fraud, legit]).sample(frac=1, random_state=42)
-
-st.success(f"Data Ready: {len(df)} rows")
 
 X = df.drop(columns=['Class'])
 y = df['Class']
@@ -50,6 +40,7 @@ def train(choice, X_train, y_train):
     return m
 
 model = train(model_choice, X_train, y_train)
+st.success("Model Ready!")
 
 row = st.number_input("Row Number", 0, len(df)-1, 100)
 if st.button("Analyze"):
@@ -62,4 +53,4 @@ if st.button("Analyze"):
     if pred==1:
         st.error(f"🔴 FRAUD - {prob:.2f}%")
     else:
-        st.success(f"🟢 LEGITIMATE - {prob:.4f}%")
+        st.success(f"🟢 LEGITIMATE - Fraud Prob {prob:.4f}%")
